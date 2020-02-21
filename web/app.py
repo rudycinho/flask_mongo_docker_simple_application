@@ -1,3 +1,155 @@
+"""
+Registration of a user 0 tokens
+Each user get 10 tokens
+Store a sentence on our database for 1 token
+Retrieve his stored sentece on out databae for 1 token
+"""
+
+from flask import Flask, jsonify, request
+from flask_restful import Api, Resource
+import os
+from pymongo import MongoClient
+import bcrypt
+
+app = Flask(__name__)
+api = Api(app)
+
+client = MongoClient('mongodb://db:27017')
+db     = client.SentencesDatabase
+users  = db["Users"]
+
+class Register(Resource):
+    def post(self):
+        # Step 1 is to get posted data by the user
+        posted_data = request.get_json()
+
+        # Get the data
+        username = posted_data["username"]
+        password = posted_data["password"]
+
+        hashed_pw = bcrypt.hashpw(password.encode('utf8') ,bcrypt.gensalt())
+
+        #Store username and pw into the database
+        users.insert({
+            "Username":username,
+            "Password":hashed_pw,
+            "Sentence":"",
+            "Tokens":6
+        })
+
+        ret_json = {
+            "status":200,
+            "msg":"You successfully signed up for the Api"
+        }
+
+        return jsonify(ret_json)
+
+def verifyPw(username,password):
+    hashed_pw = users.find({
+        "Username":username
+    })[0]["Password"]
+
+    return bcrypt.hashpw(password.encode('utf8'),hashed_pw)==hashed_pw
+
+def countTokens(username):
+    tokens = users.find({
+        "Username":username
+    })[0]["Tokens"]
+    print(tokens)
+    return tokens
+
+class Store(Resource):
+    def post(self):
+        # Step 1 get the posted data
+        posted_data = request.get_json()
+
+        # Step 2 is to read the data
+        username = posted_data["username"]
+        password = posted_data["password"]
+        senteces = posted_data["senteces"]
+
+        # Step 3 verify the username pw match
+        correct_pw = verifyPw(username,password)
+
+        if not correct_pw:
+            ret_json = {
+                "status":302
+            }
+            return jsonify(ret_json)
+        
+        # Step 4 verify user has enough tokens
+        num_tokens = countTokens(username)
+        if num_tokens <= 0:
+            ret_json = {
+                "status":301
+            }
+            return jsonify(ret_json)
+        # Step 5 store the sentence , take one token away and return 200 ok
+        users.update({
+            "Username":username
+        },{
+            "$set":{
+                "Sentence":senteces,
+                "Tokens":num_tokens-1
+            }
+        })
+        ret_json = {
+            "status":200,
+            "msg":"Sentence saved successfully"
+        }
+        return jsonify(ret_json)
+
+class Get(Resource):
+    def post(self):
+        posted_data = request.get_json()
+
+        username = posted_data["username"]
+        password = posted_data["password"]
+
+        correct_pw = verifyPw(username,password)
+
+        if not correct_pw:
+            ret_json = {
+                "status":302
+            }
+            return jsonify(ret_json)
+            
+        num_tokens = countTokens(username)
+        if num_tokens <= 0:
+            ret_json = {
+                "status":301
+            }
+            return jsonify(ret_json)
+        
+        #MAKE THE USER PAY!
+        users.update({
+            "Username":username
+        },{
+            "$set":{
+                "Tokens":num_tokens-1
+            }
+        })
+
+        sentence = users.find({
+            "Username":username
+        })[0]["Sentence"]
+
+        ret_json = {
+            "status":200,
+            "sentence":sentence
+        }
+        return jsonify(ret_json)
+
+
+api.add_resource(Register,'/register')
+api.add_resource(Store,'/store')
+api.add_resource(Get,'/get')
+
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0')
+
+"""
 from flask import Flask, jsonify, request
 from flask_restful import Api, Resource
 import os
@@ -154,3 +306,4 @@ def hello_world():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', debug=True)
+"""
